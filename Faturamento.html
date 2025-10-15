@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planilha de Faturamento Detalhada (Cloud)</title>
+    <!-- Carregamento do Tailwind CSS para estilo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        /* Estilos para Inputs numéricos e de data */
+        input[type="number"], input[type="date"], input[type="text"] {
+            border: none;
+            outline: none;
+            width: 100%;
+            text-align: right;
+            background-color: transparent;
+            padding: 0.25rem;
+        }
+        /* Alinhamento para texto e IDs */
+        [contenteditable="true"], input[type="text"] { text-align: left; padding-left: 0.5rem; }
+        input[name="qtde"], input[name="unitario"] { text-align: right; }
+        input[name="observacao"] { text-align: left; } /* Garante que a observação é alinhada à esquerda */
+        .filter-input {
+            border: 1px solid #e5e7eb;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            width: 100%;
+        }
+
+        .header-cell {
+            background-color: #1f2937; /* Cinza Escuro / Preto */
+            color: white;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .data-cell {
+            background-color: white;
+            border-bottom: 1px solid #e5e7eb;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .total-row {
+            background-color: #fee2e2; /* Vermelho Claro (Red-100) */
+            font-weight: 700;
+            border-top: 2px solid #b91c1c; /* Vermelho Escuro */
+        }
+        /* Cor de fundo do cabeçalho principal e botão */
+        .primary-bg {
+            background-color: #b91c1c; /* Vermelho Escuro (Red-700) */
+        }
+        /* Adiciona um estilo sutil para indicar o ID do usuário */
+        #user-info {
+            background-color: #fee2e2; /* Red-100 */
+            color: #7f1d1d; /* Red-900 */
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+<body class="p-2 sm:p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto bg-white shadow-2xl rounded-xl overflow-x-auto">
+        <header class="p-6 primary-bg text-white flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold">Registro de Faturamento (Colaborativo)</h1>
+                <p class="text-sm opacity-90">Os dados são salvos em tempo real para toda a equipe.</p>
+            </div>
+            <div id="user-info" class="flex-shrink-0">Carregando usuário...</div>
+        </header>
+
+        <div class="p-4">
+            <!-- CONTROLES DE FILTRO E EXPORTAÇÃO -->
+            <div class="flex flex-wrap gap-4 mb-6 items-end">
+                <div class="flex-1 min-w-[200px]">
+                    <label for="filter-cliente" class="text-sm font-medium text-gray-700">Pesquisa Rápida (Todas as Colunas):</label>
+                    <input type="text" id="filter-cliente" placeholder="Digite NF, Cliente, Referência, etc..." class="filter-input mt-1">
+                </div>
+                <div class="min-w-[150px]">
+                    <label for="filter-mes" class="text-sm font-medium text-gray-700">Filtrar por Mês:</label>
+                    <!-- O campo de seleção de mês será preenchido dinamicamente pelo JS -->
+                    <select id="filter-mes" class="filter-input mt-1">
+                        <option value="">Todos os Meses</option>
+                    </select>
+                </div>
+                
+                <!-- BOTÃO DE EXPORTAR CSV -->
+                <button id="export-csv-btn" class="py-2 px-4 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600 transition duration-150 ease-in-out min-w-[150px]">
+                    Exportar CSV
+                </button>
+            </div>
+
+            <div id="loading-spinner" class="text-center p-8 text-red-600 font-semibold">
+                Carregando dados do Faturamento...
+            </div>
+            
+            <table class="w-full text-left border-separate border-spacing-0 rounded-lg min-w-[1400px] hidden" id="spreadsheet-table">
+                <thead>
+                    <tr class="text-xs uppercase tracking-wider">
+                        <th class="header-cell p-3 w-[3rem] rounded-tl-lg">Excluir</th> <!-- COLUNA DE EXCLUSÃO -->
+                        <th class="header-cell p-3 data-header">Mês</th>
+                        <th class="header-cell p-3 data-header">NF</th>
+                        <th class="header-cell p-3 data-header">Cliente</th>
+                        <th class="header-cell p-3 data-header">Pedido</th>
+                        <th class="header-cell p-3 data-header">Referência</th>
+                        <th class="header-cell p-3 data-header">Nº OP</th>
+                        <th class="header-cell p-3 w-[7rem] data-header">Data de emissão</th>
+                        <th class="header-cell p-3 w-[7rem] data-header">Data de entrega</th>
+                        <th class="header-cell p-3 text-right w-[6rem] data-header">Qtde Faturada</th>
+                        <th class="header-cell p-3 text-right w-[6rem] data-header">Valor Unitário</th>
+                        <th class="header-cell p-3 w-[12rem] data-header">Observação</th>
+                        <th class="header-cell p-3 text-right w-[8rem] rounded-tr-lg data-header">Vlr Total</th>
+                    </tr>
+                </thead>
+                <tbody id="spreadsheet-body">
+                    <!-- Linhas de dados serão injetadas aqui pelo onSnapshot -->
+                </tbody>
+                <tfoot>
+                    <tr class="total-row text-base">
+                        <!-- Colspan ajustado para 12 (1 Excluir + 11 Colunas de Dados) -->
+                        <td colspan="12" class="p-3 rounded-bl-lg text-right">Total Geral Faturado:</td>
+                        <td id="total-general-value" class="p-3 text-right rounded-br-lg">R$ 0,00</td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <button id="add-row-btn" class="mt-4 w-full py-2 px-4 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition duration-150 ease-in-out hidden">
+                Adicionar Nova Linha de Faturamento
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, serverTimestamp, getDocs, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuração Firebase (Variáveis globais obrigatórias no ambiente Canvas)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+        let allBillingEntries = []; // Cache local de todos os dados
+
+        const COLLECTION_PATH = `artifacts/${appId}/public/data/faturamento`;
+
+        // Elementos DOM
+        const body = document.getElementById('spreadsheet-body');
+        const totalGeneralValueDisplay = document.getElementById('total-general-value');
+        const addRowButton = document.getElementById('add-row-btn');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const spreadsheetTable = document.getElementById('spreadsheet-table');
+        const userInfoDisplay = document.getElementById('user-info');
+        const filterClienteInput = document.getElementById('filter-cliente');
+        const filterMesSelect = document.getElementById('filter-mes');
+        const exportCsvBtn = document.getElementById('export-csv-btn');
+        
+        // Ativa o log de debug do Firestore
+        setLogLevel('debug');
+
+        // Dados Mock para a primeira execução
+        const MOCK_ENTRIES = [
+            { mes: 'OUT-25', nf: '11198', cliente: 'PL - C&A', pedido: '498153', referencia: '5034554', op: '23204', emissao: '2025-10-03', entrega: '2025-10-06', qtde: 670, unitario: 39.10, observacao: 'Entrega concluída.', total: 26197.00 },
+            { mes: 'OUT-25', nf: '11179', cliente: 'PO - RENNER', pedido: '5932554', referencia: '5034495', op: '23708', emissao: '2025-10-03', entrega: '2025-10-04', qtde: 484, unitario: 40.00, observacao: 'Verificar NF.', total: 19360.00 },
+            { mes: 'NOV-25', nf: '11202', cliente: 'YC - YOUCOM', pedido: '2137030', referencia: '106518-1', op: '23641', emissao: '2025-11-07', entrega: '2025-11-15', qtde: 288, unitario: 93.30, observacao: 'Aguardando confirmação de recebimento.', total: 26870.40 },
+            { mes: 'NOV-25', nf: '11205', cliente: 'BS - RENNER', pedido: '595187', referencia: '5081349', op: '23969', emissao: '2025-11-03', entrega: '2025-11-06', qtde: 189, unitario: 109.00, observacao: 'Pedido grande.', total: 20601.00 },
+        ];
+
+
+        // --- FIREBASE INITIALIZATION AND AUTH ---
+
+        async function initFirebase() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userInfoDisplay.textContent = `Usuário: ${userId}`;
+                        isAuthReady = true;
+                        // Inicia o carregamento dos dados após a autenticação
+                        loadData(); 
+                        addRowButton.classList.remove('hidden');
+                        setupFilters(); // Configura os listeners de filtro
+                        setupExport(); // Configura o listener de exportação
+                    } else {
+                        console.error("Autenticação falhou ou usuário deslogado.");
+                    }
+                });
+            } catch (error) {
+                console.error("Erro na inicialização do Firebase:", error);
+                userInfoDisplay.textContent = 'Erro de Autenticação';
+            }
+        }
+
+        // --- CÁLCULO E FORMATAÇÃO ---
+
+        // Função para formatar o valor como moeda brasileira (R$)
+        function formatCurrency(value) {
+            const num = parseFloat(value) || 0;
+            return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        // Função para calcular o Vlr Total para uma linha específica (apenas cálculo em memória)
+        function calculateRowTotal(qtde, unitario) {
+            const rowTotal = (parseFloat(qtde) || 0) * (parseFloat(unitario) || 0);
+            return rowTotal;
+        }
+
+        // Função para calcular e atualizar o Total Geral (Rodapé)
+        function calculateGeneralTotal() {
+            // Seleciona apenas as linhas VISÍVEIS
+            const visibleRows = body.querySelectorAll('.data-row:not(.hidden)');
+            let totalGeneral = 0;
+
+            visibleRows.forEach(tr => {
+                const totalCell = tr.querySelector('.row-total');
+                if (totalCell) {
+                    // Lê o valor bruto armazenado no atributo data-row-total
+                    const value = parseFloat(totalCell.getAttribute('data-row-total')) || 0;
+                    totalGeneral += value;
+                }
+            });
+
+            // Atualiza o display do Total Geral
+            totalGeneralValueDisplay.textContent = formatCurrency(totalGeneral);
+        }
+
+        // --- SALVAMENTO DE DADOS (DATABASE) ---
+        
+        // Captura todos os dados de uma linha e os salva
+        function saveRowData(tr, docId) {
+            if (!isAuthReady) return;
+
+            const data = {
+                mes: tr.querySelector('[name="mes"]').value || '',
+                nf: tr.querySelector('[name="nf"]').value || '',
+                cliente: tr.querySelector('[name="cliente"]').value || '',
+                pedido: tr.querySelector('[name="pedido"]').value || '',
+                referencia: tr.querySelector('[name="referencia"]').value || '',
+                op: tr.querySelector('[name="op"]').value || '',
+                emissao: tr.querySelector('[name="emissao"]').value || '',
+                entrega: tr.querySelector('[name="entrega"]').value || '',
+                qtde: parseFloat(tr.querySelector('[name="qtde"]').value) || 0,
+                unitario: parseFloat(tr.querySelector('[name="unitario"]').value) || 0,
+                observacao: tr.querySelector('[name="observacao"]').value || '', 
+                total: parseFloat(tr.querySelector('.row-total').getAttribute('data-row-total')) || 0,
+                updatedAt: serverTimestamp() // Marca a hora da atualização
+            };
+
+            const docRef = doc(db, COLLECTION_PATH, docId);
+            setDoc(docRef, data, { merge: true })
+                .catch(e => console.error("Erro ao salvar documento:", e));
+        }
+
+        // --- DELETAR DADOS (DATABASE) ---
+
+        function deleteBillingEntry(docId) {
+            if (!isAuthReady) return;
+
+            const tr = document.getElementById(docId);
+            if (tr) {
+                // Adiciona um flash visual de remoção (vermelho) antes de deletar do DB
+                tr.classList.add('bg-red-200', 'opacity-50', 'transition', 'duration-300');
+                
+                // Timeout para que o usuário veja a intenção de exclusão (0.3s)
+                setTimeout(() => {
+                    const docRef = doc(db, COLLECTION_PATH, docId);
+                    deleteDoc(docRef)
+                        .then(() => console.log("Documento excluído com sucesso:", docId))
+                        .catch(e => console.error("Erro ao excluir documento:", e));
+                    // O onSnapshot se encarregará de remover a linha do DOM e atualizar allBillingEntries
+                }, 300); 
+            }
+        }
+
+        // --- MANIPULAÇÃO DO DOM (CÉLULAS E LINHAS) ---
+
+        // Funções reutilizáveis para criar células
+        function createInputCell(name, placeholder, defaultValue, type = 'text', isCurrency = false, docId) {
+            const td = document.createElement('td');
+            td.classList.add('data-cell', 'p-1', 'text-gray-900', 'text-xs', 'px-3');
+            
+            const input = document.createElement('input');
+            input.type = type;
+            input.name = name;
+            input.placeholder = placeholder;
+            input.value = defaultValue;
+            input.classList.add('w-full', 'bg-transparent', 'border-0', 'focus:ring-0');
+
+            if (type === 'number') {
+                input.min = '0';
+                input.step = isCurrency ? '0.01' : '1';
+                input.setAttribute('inputmode', 'decimal');
+                td.classList.add('text-right');
+            } else if (name === 'observacao' || (type === 'text' && !name.includes('nf') && !name.includes('op'))) {
+                // Para textos descritivos e Observação, alinha à esquerda
+                td.classList.add('text-left');
+                input.style.textAlign = 'left';
+            } else if (type === 'date') {
+                 td.classList.add('text-left');
+            } else {
+                 // Para NF e OP, alinha à direita
+                 td.classList.add('text-right');
+            }
+            
+
+            // Adiciona o listener de input para salvar e recalcular
+            input.addEventListener('input', (e) => {
+                // Recalcula o total visual e o total geral
+                const tr = e.target.closest('tr');
+                if (name === 'qtde' || name === 'unitario') {
+                    const qtde = tr.querySelector('[name="qtde"]').value;
+                    const unitario = tr.querySelector('[name="unitario"]').value;
+                    const rowTotal = calculateRowTotal(qtde, unitario);
+                    
+                    const totalCell = tr.querySelector('.row-total');
+                    totalCell.textContent = formatCurrency(rowTotal);
+                    totalCell.setAttribute('data-row-total', rowTotal.toFixed(2));
+                    // O total geral será recalculado após o salvamento, mas fazemos aqui para feedback imediato
+                    calculateGeneralTotal(); 
+                }
+                
+                // Salva todos os dados da linha
+                saveRowData(tr, docId);
+            });
+            
+            td.appendChild(input);
+            return { td, input };
+        }
+        
+        // Função para construir ou atualizar uma linha da tabela no DOM
+        function renderRow(data, docId) {
+            const existingRow = document.getElementById(docId);
+            const isNew = !existingRow;
+            let tr;
+
+            if (isNew) {
+                tr = document.createElement('tr');
+                tr.id = docId;
+                tr.classList.add('data-row', 'text-sm', 'h-12');
+                // Adiciona o atributo de dados para o filtro de cliente e mês
+                tr.setAttribute('data-cliente', (data.cliente || '').toUpperCase());
+                tr.setAttribute('data-mes', (data.mes || '').toUpperCase());
+                // Adiciona o atributo de pesquisa global
+                tr.setAttribute('data-search', generateSearchString(data));
+            } else {
+                tr = existingRow;
+                // Atualiza atributos para o filtro (caso o nome/mês seja editado)
+                tr.setAttribute('data-cliente', (data.cliente || '').toUpperCase());
+                tr.setAttribute('data-mes', (data.mes || '').toUpperCase());
+                // Atualiza o atributo de pesquisa global
+                tr.setAttribute('data-search', generateSearchString(data));
+                // Limpa o conteúdo da linha existente para reconstrução (mais simples que atualizar campo a campo)
+                tr.innerHTML = ''; 
+            }
+
+            // 0. Célula de Exclusão (Lixinho) - Adicionada primeiro
+            const deleteTd = document.createElement('td');
+            deleteTd.classList.add('data-cell', 'p-1', 'text-center', 'text-gray-900', 'text-xs', 'bg-red-50');
+            deleteTd.innerHTML = `
+                <button class="text-gray-600 hover:text-red-700 p-1 transition duration-150 ease-in-out" aria-label="Excluir Linha">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 100 2v4a1 1 0 100-2V8z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            `;
+            // Adiciona o listener para a função de exclusão
+            deleteTd.querySelector('button').addEventListener('click', () => {
+                deleteBillingEntry(docId);
+            });
+
+            tr.prepend(deleteTd); // Coloca a célula de exclusão como a primeira
+
+            // Mapeamento das colunas
+            const columns = [
+                { name: 'mes', placeholder: 'Mês', type: 'text', currency: false },
+                { name: 'nf', placeholder: 'Nº NF', type: 'text', currency: false },
+                { name: 'cliente', placeholder: 'Cliente', type: 'text', currency: false },
+                { name: 'pedido', placeholder: 'Pedido', type: 'text', currency: false },
+                { name: 'referencia', placeholder: 'Ref.', type: 'text', currency: false },
+                { name: 'op', placeholder: 'Nº OP', type: 'text', currency: false },
+                { name: 'emissao', placeholder: 'DD/MM/AAAA', type: 'date', currency: false },
+                { name: 'entrega', placeholder: 'DD/MM/AAAA', type: 'date', currency: false },
+                { name: 'qtde', placeholder: '0', type: 'number', currency: false },
+                { name: 'unitario', placeholder: '0.00', type: 'number', currency: true },
+                { name: 'observacao', placeholder: 'Adicionar nota...', type: 'text', currency: false }, 
+            ];
+            
+            // 1-11: Campos de Input
+            columns.forEach(col => {
+                const { td } = createInputCell(col.name, col.placeholder, data[col.name] || '', col.type, col.currency, docId);
+                tr.appendChild(td);
+            });
+
+            // 12. Vlr Total (Saída Calculada)
+            const rowTotal = calculateRowTotal(data.qtde, data.unitario);
+            const totalTd = document.createElement('td');
+            totalTd.classList.add('data-cell', 'p-3', 'text-right', 'font-semibold', 'row-total', 'bg-red-50'); 
+            totalTd.textContent = formatCurrency(rowTotal); 
+            totalTd.setAttribute('data-row-total', rowTotal.toFixed(2)); 
+            tr.appendChild(totalTd);
+            
+            if (isNew) {
+                body.appendChild(tr);
+            }
+        }
+
+        /**
+         * Gera uma string concatenada de todos os valores de texto relevantes para a pesquisa global.
+         * @param {Object} data - O objeto de dados da linha.
+         * @returns {string} Uma string em MAIÚSCULAS para pesquisa.
+         */
+        function generateSearchString(data) {
+            const fields = [
+                data.nf, data.cliente, data.pedido, data.referencia, 
+                data.op, data.observacao, String(data.qtde), String(data.unitario)
+            ];
+            return fields.filter(val => val).join(' ').toUpperCase();
+        }
+
+        // --- LÓGICA DE FILTRO ---
+
+        function updateFilterOptions() {
+            const months = new Set();
+            filterMesSelect.innerHTML = '<option value="">Todos os Meses</option>'; // Reset
+            
+            // Coleta todos os meses únicos das entradas
+            allBillingEntries.forEach(entry => {
+                if (entry.mes) {
+                    months.add(entry.mes.toUpperCase());
+                }
+            });
+
+            // Adiciona opções ao seletor de mês
+            const sortedMonths = Array.from(months).sort();
+            sortedMonths.forEach(month => {
+                const option = document.createElement('option');
+                option.value = month;
+                option.textContent = month;
+                filterMesSelect.appendChild(option);
+            });
+        }
+
+        function applyFilters() {
+            const globalSearchTerm = filterClienteInput.value.toUpperCase().trim(); // Usaremos este campo para pesquisa global
+            const selectedMonth = filterMesSelect.value.toUpperCase();
+            
+            let visibleTotal = 0;
+            
+            allBillingEntries.forEach(entry => {
+                const tr = document.getElementById(entry.docId);
+                if (!tr) return;
+                
+                // 1. Filtro por Mês (o campo de seleção)
+                const monthMatch = !selectedMonth || entry.mes.toUpperCase() === selectedMonth;
+
+                // 2. Filtro de Pesquisa Global (o campo de texto)
+                let globalMatch = true;
+                if (globalSearchTerm) {
+                    const searchString = tr.getAttribute('data-search'); // Usa a string gerada
+                    globalMatch = searchString && searchString.includes(globalSearchTerm);
+                }
+
+                if (monthMatch && globalMatch) {
+                    tr.classList.remove('hidden');
+                    visibleTotal += entry.total;
+                } else {
+                    tr.classList.add('hidden');
+                }
+            });
+
+            // Recalcula o total geral apenas dos visíveis
+            calculateGeneralTotal();
+        }
+        
+        function setupFilters() {
+            // Agora, o 'filter-cliente' aciona a Pesquisa Global
+            filterClienteInput.addEventListener('input', applyFilters);
+            filterMesSelect.addEventListener('change', applyFilters);
+        }
+
+        // --- EXPORTAR CSV ---
+
+        function exportToCsv() {
+            const visibleRows = body.querySelectorAll('.data-row:not(.hidden)');
+            if (visibleRows.length === 0) {
+                alert('Não há dados visíveis para exportar.');
+                return;
+            }
+
+            // 1. Obter Cabeçalhos (excluindo a coluna "Excluir")
+            const headers = Array.from(document.querySelectorAll('.data-header')).map(th => th.textContent.trim());
+            
+            // 2. Coletar Dados das Linhas Visíveis
+            const rows = [];
+            
+            visibleRows.forEach(tr => {
+                const rowData = [];
+                const inputs = tr.querySelectorAll('input');
+                const totalCell = tr.querySelector('.row-total');
+
+                // Mapear os valores dos inputs na ordem dos headers
+                // O array 'inputs' contém os 11 campos editáveis (do Mês até a Observação)
+                inputs.forEach(input => {
+                    // Substitui vírgulas por ponto e vírgula, e remove quebras de linha/espaços para CSV
+                    let value = input.value.replace(/,/g, ';').replace(/\s+/g, ' ').trim(); 
+                    rowData.push(`"${value}"`); // Coloca aspas para lidar com strings com vírgulas
+                });
+                
+                // Adicionar o Vlr Total (que é calculado e está na célula .row-total)
+                // Retira "R$" e formata o decimal para CSV (usando ponto)
+                const totalValue = totalCell.getAttribute('data-row-total') || '0.00';
+                rowData.push(totalValue);
+
+                rows.push(rowData.join(','));
+            });
+
+            // 3. Montar o conteúdo CSV
+            const csvContent = [
+                headers.join(','), // Cabeçalho
+                ...rows,           // Linhas de dados
+                `Total Geral Faturado:,,"${totalGeneralValueDisplay.textContent.replace(/"/g, '""')}"` // Rodapé do Total Geral
+            ].join('\n');
+
+            // 4. Criar e baixar o arquivo
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            
+            link.setAttribute('href', url);
+            
+            // Usa o mês selecionado no filtro (se houver) para o nome do arquivo
+            const selectedMonthName = filterMesSelect.value || 'Geral';
+            link.setAttribute('download', `Faturamento-${selectedMonthName}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function setupExport() {
+            exportCsvBtn.addEventListener('click', exportToCsv);
+        }
+
+
+        // --- CARREGAMENTO DE DADOS INICIAIS (MOCK) ---
+
+        async function addMockDataIfEmpty() {
+            if (!db) return;
+
+            console.log("Verificando se a coleção está vazia para adicionar dados mock...");
+            const initialSnapshot = await getDocs(collection(db, COLLECTION_PATH));
+
+            if (initialSnapshot.empty) {
+                console.log("Coleção vazia. Adicionando dados mock.");
+                for (const data of MOCK_ENTRIES) {
+                    const newDocRef = doc(collection(db, COLLECTION_PATH));
+                    await setDoc(newDocRef, {
+                        ...data,
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp()
+                    });
+                }
+            } else {
+                console.log("Coleção já contém dados. Não adicionando dados mock.");
+            }
+        }
+
+
+        // --- CARREGAMENTO DE DADOS (REAL-TIME) ---
+
+        async function loadData() {
+            if (!db || !isAuthReady) return;
+            
+            loadingSpinner.classList.remove('hidden');
+            spreadsheetTable.classList.add('hidden');
+            
+            await addMockDataIfEmpty();
+
+            const q = query(collection(db, COLLECTION_PATH));
+            
+            onSnapshot(q, (snapshot) => {
+                // Limpa o cache para reconstruir a partir do novo snapshot
+                allBillingEntries = []; 
+                
+                snapshot.docChanges().forEach(change => {
+                    const docId = change.doc.id;
+                    const data = change.doc.data();
+                    
+                    if (change.type === "added" || change.type === "modified") {
+                        // Encontra/Atualiza o item no cache local
+                        const existingIndex = allBillingEntries.findIndex(e => e.docId === docId);
+                        const entry = { ...data, docId };
+                        if (existingIndex > -1) {
+                            allBillingEntries[existingIndex] = entry;
+                        } else {
+                            allBillingEntries.push(entry);
+                        }
+                        renderRow(data, docId);
+                    } else if (change.type === "removed") {
+                        const trToRemove = document.getElementById(docId);
+                        if (trToRemove) {
+                            trToRemove.remove();
+                        }
+                        // Remove do cache local
+                        allBillingEntries = allBillingEntries.filter(e => e.docId !== docId);
+                    }
+                });
+
+                // 1. Atualiza as opções de mês no filtro (caso um novo mês tenha sido adicionado/removido)
+                updateFilterOptions(); 
+                
+                // 2. Aplica os filtros e recalcula o total
+                applyFilters();
+
+                loadingSpinner.classList.add('hidden');
+                spreadsheetTable.classList.remove('hidden');
+            });
+        }
+
+
+        // --- NOVA LINHA ---
+
+        addRowButton.addEventListener('click', async () => {
+            if (!isAuthReady) return;
+            
+            const newDocRef = doc(collection(db, COLLECTION_PATH));
+            
+            const date = new Date().toISOString().split('T')[0];
+            // Garante que o Mês inicial seja o Mês atual para evitar erros
+            const monthYear = new Date().toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '').replace(' ', '-').toUpperCase();
+
+            const initialData = {
+                mes: monthYear, 
+                nf: '', 
+                cliente: 'Novo Cliente', 
+                pedido: '', 
+                referencia: '', 
+                op: '', 
+                emissao: date, 
+                entrega: date, 
+                qtde: 1, 
+                unitario: 100.00,
+                observacao: '', 
+                total: 100.00,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            };
+
+            // Salva a linha inicial no Firestore
+            await setDoc(newDocRef, initialData)
+                 .catch(e => console.error("Erro ao criar novo documento:", e));
+        });
+
+        // Inicia a aplicação
+        initFirebase();
+    </script>
+</body>
+</html>
